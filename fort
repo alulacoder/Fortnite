@@ -1,0 +1,204 @@
+import pgzrun
+from random import randint, choice
+import math
+import time
+
+# Game setup
+WIDTH = 800
+HEIGHT = 600
+
+# Player setup
+player = Actor('player', (WIDTH // 2, HEIGHT // 2))
+player.speed = 5
+player.health = 100
+
+# Robot setup
+robot = Actor('robot', (randint(50, WIDTH - 50), randint(50, HEIGHT - 50)))
+robot.speed = 3
+robot.health = 100
+robot.direction = randint(0, 360)  # Initial movement direction in degrees
+robot.change_direction_timer = randint(30, 90)  # Frames until next direction change
+
+# Item setup
+ITEMS = ["healthpack", "shield"]
+items = []
+
+# Game state
+game_over = False
+winner = None
+
+# Cooldown timers
+robot_attack_cooldown = 1.0  # seconds between robot attacks
+last_robot_attack_time = 0  # timestamp of last robot attack
+
+# Function to spawn items randomly
+def spawn_item():
+    x = randint(50, WIDTH - 50)
+    y = randint(50, HEIGHT - 50)
+    item_type = choice(ITEMS)
+    items.append(Actor(item_type, (x, y)))  # Create an item actor
+
+# Initialize the game
+def initialize_game():
+    global game_over, winner, last_robot_attack_time
+    player.health = 100
+    robot.health = 100
+    player.pos = (WIDTH // 2, HEIGHT // 2)
+    robot.pos = (randint(50, WIDTH - 50), randint(50, HEIGHT - 50))
+    robot.direction = randint(0, 360)
+    robot.change_direction_timer = randint(30, 90)
+    items.clear()  # Clear previous items
+    for _ in range(5):  # Spawn 5 items
+        spawn_item()
+    game_over = False
+    winner = None
+    last_robot_attack_time = 0
+
+# Draw the game state
+def draw():
+    screen.clear()
+    screen.blit('fortnite', (0, 0))  # Draw the background image
+    player.draw()
+    robot.draw()
+    for item in items:
+        item.draw()
+
+    # Display health
+    screen.draw.text(f'Player Health: {player.health}', (10, 10), color="white", fontsize=30)
+    screen.draw.text(f'Robot Health: {robot.health}', (10, 50), color="white", fontsize=30)
+
+    if game_over:
+        if winner == 'player':
+            msg = 'You Win!'
+            color = "green"
+        elif winner == 'robot':
+            msg = 'You Lose!'
+            color = "red"
+        else:
+            msg = 'Game Over!'
+            color = "yellow"
+        screen.draw.text(msg, center=(WIDTH // 2, HEIGHT // 2), color=color, fontsize=50)
+
+# Update the game state
+def update():
+    if not game_over:
+        handle_player_movement()
+        handle_robot_movement()
+        check_item_collision()
+        check_robot_collision()
+        check_game_over()
+
+# Handle player movement
+def handle_player_movement():
+    if keyboard.left:
+        player.x -= player.speed
+    if keyboard.right:
+        player.x += player.speed
+    if keyboard.up:
+        player.y -= player.speed
+    if keyboard.down:
+        player.y += player.speed
+
+    # Keep player within screen bounds
+    player.x = max(0, min(WIDTH, player.x))
+    player.y = max(0, min(HEIGHT, player.y))
+
+# Handle robot movement
+def handle_robot_movement():
+    global robot
+    robot.change_direction_timer -= 1
+    if robot.change_direction_timer <= 0:
+        robot.direction = randint(0, 360)
+        robot.change_direction_timer = randint(30, 90)  # Reset timer
+
+    # Move robot based on current direction
+    robot.x += robot.speed * math.cos(math.radians(robot.direction))
+    robot.y += robot.speed * math.sin(math.radians(robot.direction))
+
+    # Bounce off the walls
+    bounced = False
+    if robot.x < 0:
+        robot.x = 0
+        robot.direction = (180 - robot.direction) % 360
+        bounced = True
+    elif robot.x > WIDTH:
+        robot.x = WIDTH
+        robot.direction = (180 - robot.direction) % 360
+        bounced = True
+
+    if robot.y < 0:
+        robot.y = 0
+        robot.direction = (-robot.direction) % 360
+        bounced = True
+    elif robot.y > HEIGHT:
+        robot.y = HEIGHT
+        robot.direction = (-robot.direction) % 360
+        bounced = True
+
+    if bounced:
+        robot.change_direction_timer = randint(30, 90)  # Reset timer on bounce
+
+# Check for collisions with items
+def check_item_collision():
+    global game_over, winner
+    for item in items[:]:  # Iterate over a copy of the list
+        if player.colliderect(item):
+            items.remove(item)  # Remove the item on collision
+            if item.image == "healthpack":
+                player.health += 20
+                player.health = min(player.health, 100)  # Cap health at 100
+            elif item.image == "shield":
+                # Implement shield effect (e.g., temporary invincibility or damage reduction)
+                # For simplicity, let's assume shield adds 10 health
+                player.health += 10
+                player.health = min(player.health, 100)
+            if player.health <= 0:
+                game_over = True
+                winner = 'robot'
+
+# Check robot collision with player
+def check_robot_collision():
+    global game_over, winner, last_robot_attack_time
+    current_time = time.time()  # Get the current time
+    if player.distance_to(robot) < 50:  # Check if robot is close enough to attack
+        if current_time - last_robot_attack_time >= robot_attack_cooldown:  # Check cooldown
+            player.health -= 10  # Deduct 10 health points
+            last_robot_attack_time = current_time  # Update last attack time
+            print(f"Robot attacked! Player health: {player.health}")  # Debugging
+            if player.health <= 0:
+                game_over = True
+                winner = 'robot'
+
+# Check game over conditions
+def check_game_over():
+    global game_over, winner
+    if player.health <= 0:
+        game_over = True
+        winner = 'robot'
+    if robot.health <= 0:
+        game_over = True
+        winner = 'player'
+
+# Handle player attacking robot via mouse click (tap)
+def on_mouse_down(pos):
+    global game_over, winner
+    if not game_over:
+        if player.distance_to(robot) < 50:
+            robot.health -= 10
+            print(f"Player attacked robot! Robot health: {robot.health}")  # Debugging
+            if robot.health <= 0:
+                game_over = True
+                winner = 'player'
+    else:
+        # Restart the game when clicked after game over
+        initialize_game()
+
+# Optionally, handle restarting the game by pressing the 'R' key
+def on_key_down(key):
+    if key == keys.R and game_over:
+        initialize_game()
+
+# Initialize the game when the script runs
+initialize_game()
+
+pgzrun.go()
